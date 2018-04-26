@@ -1,0 +1,131 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+
+
+Description: VPC + Bastion Nested Stack
+
+
+Parameters:
+
+  AvailabilityZone1:
+    Description: The first availability zone in the region
+    Type: AWS::EC2::AvailabilityZone::Name
+    ConstraintDescription: Must be a valid availability zone
+
+  AvailabilityZone2:
+    Description: The second availability zone in the region
+    Type: AWS::EC2::AvailabilityZone::Name
+    ConstraintDescription: Must be a valid availability zone
+
+  SSHFrom:
+    Description: Limit SSH access to bastion hosts to a CIDR IP block
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 0.0.0.0/0
+
+  KeyName:
+    Description: EC2 key pair name for bastion host SSH access
+    Type: AWS::EC2::KeyPair::KeyName
+
+  LogRetentionInDays:
+    Description: Number of days you would like your CloudWatch Logs to be retained
+    Type: Number
+    Default: 90
+
+  # For more information on the google-authenticator PAM module, see: https://github.com/google/google-authenticator-libpam
+  MFA:
+    Description: Set to true to install MFA using the google-authenticator PAM module on your bastion host
+    Type: String
+    ConstraintDescription: Value must be true or false
+    Default: false
+    AllowedValues:
+      - true
+      - false
+
+  EnvironmentName:
+    Type: String
+    Description: Environment name - dev or prod
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    ConstraintDescription: Specify either dev or prod
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Environment
+        Parameters:
+          - EnvironmentName
+      - Label:
+          default: Region Availability Zones
+        Parameters:
+          - AvailabilityZone1
+          - AvailabilityZone2
+      - Label:
+          default: Bastion
+        Parameters:
+          - KeyName
+          - LogRetentionInDays
+          - MFA
+          - SSHFrom
+    ParameterLabels:
+      AvailabilityZone1:
+        default: Availability Zone 1
+      AvailabilityZone2:
+        default: Availability Zone 2
+      SSHFrom:
+        default: Bastion SSH Whitelist
+      EnvironmentName:
+        default: Environment
+      KeyName:
+        default: EC2 Key Pair
+      LogRetentionInDays:
+        default: Log Retention
+      MFA:
+        default: Multi-Factor
+      SSHFrom:
+        default: SSH Whitelist
+
+
+Conditions:
+
+  IsProd: !Equals [ !Ref EnvironmentName, prod ]
+
+
+Resources:
+
+  VpcStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/qherb-cloudformation-templates/vpc.cfn.yml 
+      Parameters:
+        AvailabilityZone1: !Ref AvailabilityZone1
+        AvailabilityZone2: !Ref AvailabilityZone2
+        SSHFrom: !Ref SSHFrom
+
+  BastionStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/qherb-cloudformation-templates/bastion.cfn.yml 
+      Parameters:
+        NetworkStackName: !GetAtt VpcStack.Outputs.Name
+        KeyName: !Ref KeyName
+        LogRetentionInDays: !Ref LogRetentionInDays
+        MFA: !Ref MFA
+    DependsOn: VpcStack
+
+
+Outputs:
+
+  VpcStackName:
+    Value: !GetAtt VpcStack.Outputs.Name
+    Export:
+      Name: !Sub ${AWS::StackName}-VpcStackName
+
+  BastionStackName:
+    Value: !GetAtt BastionStack.Outputs.Name
+    Export:
+      Name: !Sub ${AWS::StackName}-BastionStackName
